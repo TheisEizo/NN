@@ -1,5 +1,5 @@
-#import os
-#os.chdir('C:/Users/45414/Python/nn')
+import os
+os.chdir('C:/Users/45414/Python/nn/nn_v1')
 
 from nn_v1_func import import_MNIST
 from nn_v1_neurons import Sigmoid, Tanh, ReLU
