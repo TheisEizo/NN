@@ -10,59 +10,13 @@ def import_MNIST():
 class util:
     @staticmethod
     def accuracy(y_true, y_pred):
-        return np.mean(np.argmax(y_pred,axis=1) == np.argmax(y_true,axis=1))
-    
+        return np.mean(y_pred.argmax(axis=-1) == y_true.argmax(axis=-1))
     @staticmethod
     def onehot(y):
         y = np.array(y, int)
         res = np.zeros([y.size, np.max(y) + 1])
         res[range(y.size), y] = 1.
         return res
-
-class neuron:
-    name = "Basic Neuron"    
-    def __repr__(cls): return f'{cls.name}'
-    @staticmethod
-    def act(X): raise NotImplementedError
-    @staticmethod
-    def diff(X): raise NotImplementedError  
-        
-class Sigmoid(neuron):
-    name = 'Sigmoid Neuron'
-    @staticmethod
-    def act(X): return 1/(1+np.exp(-X))
-    @classmethod
-    def diff(cls, X): return cls.act(X)*(1-cls.act(X))
-    
-class ReLU(neuron):
-    name = 'ReLU Neuron'
-    @staticmethod
-    def act(X): return np.maximum(0,X)
-    @staticmethod
-    def diff(X): return (X>0).astype(int)
-
-class layer:
-    name = "Basic Layer"
-    def __init__(self, ntype, wshape):
-        self.ntype = ntype()
-        self.ws = np.random.randn(wshape[0], wshape[1])/np.sqrt(wshape[1])
-        self.bs = np.random.randn(1, wshape[1])
-        self.dws = np.zeros(self.ws.shape)
-        self.dbs = np.zeros(self.bs.shape)
-        self.ddws = self.dws
-        self.ddbs = self.dbs
-        
-    def __repr__(self): return f'{self.name} with {self.ntype}'        
-    def act(X): raise NotImplementedError
-    def diff(self, y): raise NotImplementedError  
-
-class FullCon(layer):
-    name = "Full Connected Layer"
-    def act(self, X):
-        if len(X.shape) < 2: X = X[np.newaxis,:]
-        Z = np.dot(X, self.ws)+self.bs
-        X = self.ntype.act(Z)
-        return Z, X
     
 class nn:
     name = "Basic Neural Net"
@@ -74,7 +28,7 @@ class nn:
     def __repr__(self):
         return f'{self.name} with {self.layers} and {self.costf}'
         
-    def SGD(self, X, y, epochs=10, batch_size=10, eta=0.5, lmbda=0.0, test_data=None):
+    def SGD(self, X, y, epochs=10, batch_size=10, eta=0.1, lmbda=0.0, test_data=None):
         y = util.onehot(y)
         if test_data: 
             X_t, y_t = test_data
@@ -104,7 +58,6 @@ class nn:
             self.diff(y)
             for l in self.layers:
                 l.dbs += l.ddbs; l.dws += l.ddws
-
         for l in self.layers:
             l.ws -= eta*(lmbda/n)*l.ws
             l.ws -= eta/len(batch)*l.dbs 
@@ -133,32 +86,9 @@ class FF(nn):
             l.ddws = np.zeros(l.ws.shape)
         
         for n in range(-1,-len(self.layers)-1,-1):
+            l = self.layers[n]
             if n == -1: 
                 da = self.costf.diff(self.cache[n]['Z'], self.cache[n]['X'], y)
-                l = self.layers[n]
-                l.ddbs = da; l.ddws = np.dot(self.cache[n-1]['X'].T, da)
+                l.diff(da, self.cache[n-1]['X'])
             else:
-                l = self.layers[n+1]
-                da = np.dot(da, l.ws.T) * l.ntype.diff(self.cache[n]['Z'])
-                l = self.layers[n]
-                l.ddbs = da; l.ddws = np.dot(self.cache[n-1]['X'].T, da)
-    
-class cost:
-    name = "Basic Cost Function"   
-    def __repr__(cls): return f'{cls.name}'
-    def act(y_pred, y_true): raise NotImplementedError
-    def diff(y_pred, y_true): raise NotImplementedError 
-
-class SquaredLoss(cost):
-    name = "Squared Loss Cost Function"
-    @staticmethod
-    def act(Z, X, y): return 0.5 * np.linalg.norm(X - y)**2 
-    @staticmethod
-    def diff(Z, X, y): return (X - y) * Sigmoid.diff(Z)
-
-class CrossEntropy(cost):
-    name = "Cross Entropy Cost Function"
-    @staticmethod
-    def act(Z, X, y): return np.sum(np.nan_to_num(-y*np.log(X)-(1-y)*np.log(1-X)))
-    @staticmethod
-    def diff(Z, X, y): return (X - y)
+                da = l.diff(da, self.cache[n-1]['X'], self.layers[n+1], self.cache[n]['Z'])
