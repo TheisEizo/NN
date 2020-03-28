@@ -4,7 +4,7 @@ class layer:
     name = "Basic Layer"
     def __init__(self, ntype, wshape):
         self.ntype = ntype()
-        self.ws = np.random.randn(wshape[0], wshape[1])/np.sqrt(wshape[1])
+        self.ws = np.random.randn(wshape[0], wshape[1])/np.sqrt(wshape[0])
         self.bs = np.random.randn(1, wshape[1])
         self.dws = np.zeros(self.ws.shape)
         self.dbs = np.zeros(self.bs.shape)
@@ -32,7 +32,7 @@ class FullCon(layer):
             self.ddws = np.dot(X.T, da)
             return da
 
-class Dropout(layer): ##FIX
+class Dropout(layer):
     name = "Dropout Layer"
     def __init__(self, p):
         self.p = p
@@ -50,11 +50,8 @@ class Dropout(layer): ##FIX
         return X, self.mask*X
     
     def diff(self, da, X, l=None, Z=None):
-        if not l: 
-            pass
-        else: 
-            da = np.dot(da, l.ws.T)
-            return da*self.mask.astype(float)
+        if not l: pass
+        else: return np.dot(da, l.ws.T)*self.mask.astype(float)
     
 class BatchNorm(layer): ##FIX
     def exp_running_avg(running, new, gamma=.9):
