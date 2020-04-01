@@ -48,4 +48,11 @@ class Softmax(neuron):
     def diff(cls, X):
         smX = cls.act(X).reshape((-1,1))
         return np.diagflat(cls.act(X)) - np.dot(smX, smX.T)
+
+class Kernel(neuron):
+    name = 'Kernel Neuron'
+    @staticmethod
+    def act(X): return X
+    @staticmethod
+    def diff(X): return np.ones(X.shape)
     

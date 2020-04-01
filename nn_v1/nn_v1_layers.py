@@ -1,4 +1,5 @@
 import numpy as np
+from nn_v1_func import util
 
 class layer:
     name = "Basic Layer"
@@ -22,6 +23,7 @@ class FullCon(layer):
         Z = np.dot(X, self.ws)+self.bs
         X = self.ntype.act(Z)
         return Z, X
+    
     def diff(self, da, X, l=None, Z=None):
         if not l:
             self.ddbs = da; 
@@ -30,7 +32,7 @@ class FullCon(layer):
             da = np.dot(da, l.ws.T) * self.ntype.diff(Z)
             self.ddbs = np.sum(da, axis=0)
             self.ddws = np.dot(X.T, da)
-            return da
+        return da
 
 class Dropout(layer):
     name = "Dropout Layer"
@@ -50,8 +52,64 @@ class Dropout(layer):
         return X, self.mask*X
     
     def diff(self, da, X, l=None, Z=None):
-        if not l: pass
+        if not l: return da
         else: return np.dot(da, l.ws.T)*self.mask.astype(float)
+
+class Conv(layer):
+    name = "Convelution Layer"
+    def __init__(self, ntype, wshape, imshape=None, kshape=None, padding=(1, 0), roll=1):
+        self.ntype = ntype()
+        self.ws = np.random.randn(wshape[0], wshape[1])/np.sqrt(wshape[0])
+        self.bs = np.random.randn(1, wshape[1])
+        self.dws = np.zeros(self.ws.shape)
+        self.dbs = np.zeros(self.bs.shape)
+        self.ddws = self.dws
+        self.ddbs = self.dbs
+        
+        self.imshape = imshape
+        self.padding = padding #Padding width, paddig value (float or 'min')
+        self.kshape = kshape
+        self.roll = roll
+
+    def act(self, X):    
+        if self.imshape == None: self.imshape = (util.int_sqrt(X.shape[-1]),)*2
+        if self.kshape == None: self.kshape = (util.int_sqrt(self.ws.shape[0]),)*2
+        
+        X = X.reshape(X.shape[:-1]+self.imshape)
+        
+        X = util.im2col(X, self.padding, self.kshape, self.roll)
+        X = np.dot(X, self.ws) + self.bs
+        Z = X.reshape(X.shape[0],-1)
+        X = self.ntype.act(Z)
+        return Z, X
+        
+    def diff(self, y): raise NotImplementedError  
+
+class Pool(layer):
+    name = "Pooling Layer Layer"
+    def __init__(self, ntype, imshape, kshape):
+        self.ntype = ntype
+        self.ws = np.zeros(1)
+        self.bs = np.zeros(1)
+        self.dws = self.ws
+        self.dbs = self.bs
+        self.ddws = self.dws
+        self.ddbs = self.dbs
+        
+        self.imshape = kshape
+        self.kshape = kshape
+        
+    def act(self, X):
+        if self.imshape[-1]==-1: self.imshape = (self.imshape[0],)+(util.int_sqrt(X.shape[-1]/self.imshape[0]),)*2
+        X = X.reshape(X.shape[:-1]+self.imshape)
+        X = util.im_split(X, self.kshape)
+        if self.ntype == 'max':
+            X = np.amax(X, axis=(-2,-1))
+        if self.ntype == 'mean':
+            X = np.mean(X,axis=(-2,-1))
+        return X
+        
+    def diff(self, y): raise NotImplementedError  
     
 class BatchNorm(layer): ##FIX
     def exp_running_avg(running, new, gamma=.9):
@@ -94,8 +152,6 @@ class BatchNorm(layer): ##FIX
         dX = (dX_norm * std_inv) + (dvar * 2 * X_mu / N) + (dmu / N)
         dgamma = np.sum(dout * X_norm, axis=0)
         dbeta = np.sum(dout, axis=0)
-    
+        
         return dX, dgamma, dbeta
-    
-
-    
+        
