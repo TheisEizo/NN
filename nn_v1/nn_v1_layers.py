@@ -89,24 +89,19 @@ class Pool(layer):
     name = "Pooling Layer Layer"
     def __init__(self, ntype, imshape, kshape):
         self.ntype = ntype
-        self.ws = np.zeros(1)
-        self.bs = np.zeros(1)
-        self.dws = self.ws
-        self.dbs = self.bs
-        self.ddws = self.dws
-        self.ddbs = self.dbs
-        
         self.imshape = kshape
         self.kshape = kshape
+        
+        self.ws = np.zeros(1); self.bs = np.zeros(1)
+        self.dws = self.ws; self.dbs = self.bs
+        self.ddws = self.dws; self.ddbs = self.dbs
         
     def act(self, X):
         if self.imshape[-1]==-1: self.imshape = (self.imshape[0],)+(util.int_sqrt(X.shape[-1]/self.imshape[0]),)*2
         X = X.reshape(X.shape[:-1]+self.imshape)
         X = util.im_split(X, self.kshape)
-        if self.ntype == 'max':
-            X = np.amax(X, axis=(-2,-1))
-        if self.ntype == 'mean':
-            X = np.mean(X,axis=(-2,-1))
+        if self.ntype == 'max': X = np.amax(X, axis=(-2,-1))
+        if self.ntype == 'mean': X = np.mean(X,axis=(-2,-1))
         return X
         
     def diff(self, y): raise NotImplementedError  
