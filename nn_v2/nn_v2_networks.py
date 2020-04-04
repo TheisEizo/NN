@@ -1,4 +1,4 @@
-from nn_v1_func import util
+from nn_v2_func import util
 import numpy as np
 
 class nn:

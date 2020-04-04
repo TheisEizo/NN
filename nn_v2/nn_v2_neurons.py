@@ -49,7 +49,7 @@ class Softmax(neuron):
         smX = cls.act(X).reshape((-1,1))
         return np.diagflat(cls.act(X)) - np.dot(smX, smX.T)
 
-class Kernel(neuron):
+class Identity(neuron):
     name = 'Kernel Neuron'
     @staticmethod
     def act(X): return X

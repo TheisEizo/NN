@@ -1,5 +1,5 @@
 import numpy as np
-from nn_v1_func import util
+from nn_v2_func import util
 
 class layer:
     name = "Basic Layer"
@@ -14,7 +14,7 @@ class layer:
         
     def __repr__(self): return f'{self.name} with {self.ntype}'        
     def act(X): raise NotImplementedError
-    def diff(self, y): raise NotImplementedError  
+    def diff(self, da, X, l=None, Z=None): raise NotImplementedError  
 
 class FullCon(layer):
     name = "Full Connected Layer"
@@ -77,19 +77,37 @@ class Conv(layer):
         
         X = X.reshape(X.shape[:-1]+self.imshape)
         
-        X = util.im2col(X, self.padding, self.kshape, self.roll)
+        X = self.im2col(X, self.padding, self.kshape, self.roll)
         X = np.dot(X, self.ws) + self.bs
         Z = X.reshape(X.shape[0],-1)
         X = self.ntype.act(Z)
         return Z, X
         
-    def diff(self, y): raise NotImplementedError  
+    def diff(self, da, X, l=None, Z=None): raise NotImplementedError  
 
+    @staticmethod
+    def im2col(X, padding, kshape, roll):
+        p_shape = ((0,0),)*(len(X.shape)-2)+((padding[0],)*2,)*2
+        if padding[1] == 'min': 
+            X = np.pad(X, p_shape, 'constant', constant_values=X.min())
+        else:
+            X = np.pad(X, p_shape, 'constant', constant_values=padding[1])
+        
+        X = np.array([np.roll(X, -i*roll, axis=-1)[:,:,:kshape[-1]] 
+                    for i in range(0,X.shape[-1]-kshape[-1]+1,roll)])
+        X = np.array([np.roll(X, -i*roll, axis=-2)[:,:,:kshape[-2]] 
+                    for i in range(0,X.shape[-2]-kshape[-2]+1,roll)])
+        
+        X = X.reshape(X.shape[:-2]+(-1,))
+        X = X.reshape((-1,)+X.shape[-2:])
+        X = np.moveaxis(X,-2,0)
+        return X
+    
 class Pool(layer):
     name = "Pooling Layer Layer"
     def __init__(self, ntype, imshape, kshape):
         self.ntype = ntype
-        self.imshape = kshape
+        self.imshape = imshape
         self.kshape = kshape
         
         self.ws = np.zeros(1); self.bs = np.zeros(1)
@@ -99,12 +117,22 @@ class Pool(layer):
     def act(self, X):
         if self.imshape[-1]==-1: self.imshape = (self.imshape[0],)+(util.int_sqrt(X.shape[-1]/self.imshape[0]),)*2
         X = X.reshape(X.shape[:-1]+self.imshape)
-        X = util.im_split(X, self.kshape)
+        X = self.im_split(X, self.kshape)
         if self.ntype == 'max': X = np.amax(X, axis=(-2,-1))
         if self.ntype == 'mean': X = np.mean(X,axis=(-2,-1))
-        return X
+        X = X.reshape(X.shape[0],-1)
+        return X, X
         
-    def diff(self, y): raise NotImplementedError  
+    def diff(self, da, X, l=None, Z=None): raise NotImplementedError 
+    
+    @staticmethod    
+    def im_split(X, kshape):
+        X = np.array(np.split(X,X.shape[-1]/kshape[-1],axis=-1))
+        X = np.array(np.split(X,X.shape[-2]/kshape[-2],axis=-2))
+        X = np.moveaxis(X,2,0)
+        X = X.reshape((X.shape[0],)+(-1,)+X.shape[3:])
+        X = np.moveaxis(X,1,2)
+        return X
     
 class BatchNorm(layer): ##FIX
     def exp_running_avg(running, new, gamma=.9):
