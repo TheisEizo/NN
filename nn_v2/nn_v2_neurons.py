@@ -29,7 +29,7 @@ class LReLU(neuron):
     @staticmethod
     def act(X, a=1e-3): return np.maximum(a*X, X)
     @staticmethod
-    def diff(X, a=1e-3): (X>=0)*1+(X<0)*a
+    def diff(X, a=1e-3): ((X>=0)*1.+(X<0)*a).astype(float)
 
 class Tanh(neuron):
     name = 'Tanh Neuron'

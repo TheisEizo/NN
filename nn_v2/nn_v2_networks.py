@@ -26,12 +26,11 @@ class nn:
             for batch in batches: 
                 self.update(batch, eta, n, reg, momentum)
             print(f'Epoch {i+1} out of {epochs}')
-            self.act(X)
-            print('Accuracy on training data: '+str((util.accuracy(y, self.cache[-1]['X']))))
+    
+            print('Accuracy on training data: '+str(self.accuracy(X, y)))
             if test_data: 
-                self.act(X_t)
-                print('Accuracy on test data: '+str((util.accuracy(y_t, self.cache[-1]['X']))))
-                
+                print('Accuracy on test data: '+str(self.accuracy(X_t, y_t)))
+        
     def update(self, batch, eta, n, reg, momentum):
         for l in self.layers:
             l.dbs = np.zeros(l.bs.shape); l.dws = np.zeros(l.ws.shape)
@@ -51,15 +50,29 @@ class nn:
             else:
                 l.ws -= eta/len(batch)*l.dws
             l.bs -= eta/len(batch)*l.dbs 
-            
-            
+        
     def predict(self, X):
         self.act(X)
         return self.cache[-1]['X'].argmax(axis=-1)
         
     def act(X): raise NotImplementedError
-    def diff(self, y): raise NotImplementedError  
-        
+    def diff(self, y): raise NotImplementedError
+    
+    def accuracy(self, X, y):
+        if len(y) < 1000:
+            self.act(X)
+            y_pred = self.cache[-1]['X']
+            pred = y_pred.argmax(axis=-1) == y.argmax(axis=-1)
+        else: #MEMORY FIX
+            res = np.array([])
+            for Xi, yi in zip(np.split(X, 50), np.split(y, 50),):
+                self.act(Xi)
+                yi_pred = self.cache[-1]['X']
+                pred = yi_pred.argmax(axis=-1) == yi.argmax(axis=-1)
+                res = np.hstack((res, pred))
+        mean_pred = np.mean(pred)
+        return mean_pred
+
 class FF(nn):
     name = "Feed Forward Network"
     def act(self, X):

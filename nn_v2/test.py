@@ -78,4 +78,5 @@ def pool_act(X):
     return X
 
 pool_act(a)
-
+#%%
+import cv2
