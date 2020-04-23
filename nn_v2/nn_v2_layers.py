@@ -3,8 +3,12 @@ from nn_v2_func import util
 
 class layer:
     name = "Basic Layer"
-    def __init__(self, ntype, *args, **kwargs):
+    def __init__(self, ntype, ws, bs, *args, **kwargs):
         self.ntype = ntype()
+        self.dws = np.zeros(self.ws.shape)
+        self.dbs = np.zeros(self.bs.shape)
+        self.ddws = self.dws
+        self.ddbs = self.dbs
         
     def __repr__(self): return f'{self.name} with {self.ntype}'        
     def act(self,*args, **kwargs): raise NotImplementedError(f'{self.name}')
@@ -13,14 +17,10 @@ class layer:
 class FullCon(layer):
     name = "Full Connected Layer"
     def __init__(self, ntype, wshape):
-        self.ntype = ntype()
         self.ws = np.random.randn(wshape[0], wshape[1])/np.sqrt(wshape[0])
         self.bs = np.random.randn(1, wshape[1])
-        self.dws = np.zeros(self.ws.shape)
-        self.dbs = np.zeros(self.bs.shape)
-        self.ddws = self.dws
-        self.ddbs = self.dbs
-    
+        super().__init__(ntype, self.ws, self.bs)
+        
     def act(self, X):
         if len(X.shape) < 2: 
             X = X[np.newaxis,:]
@@ -40,20 +40,21 @@ class FullCon(layer):
 
 class Dropout(layer):
     name = "Dropout Layer"
-    def __init__(self, p):
-        self.p = p
-        self.ntype = 'Binomial'
-        self.mask = None
+    def __init__(self, ntype, p):
+        self.ws = np.array(0.); 
+        self.bs = np.array(0.)
+        super().__init__(lambda: ntype, self.ws, self.bs)
         
-        nan = np.array(0.)
-        self.ws = nan; self.bs = nan
-        self.dws = nan; self.dbs = nan
-        self.ddws = nan; self.ddbs = nan
+        self.p = p
+        self.mask = None
         
     def act(self, X):
         if len(X.shape) < 2: 
             X = X[np.newaxis,:]
-        self.mask = np.random.binomial(1, self.p, size=X.shape)/self.p
+        if self.ntype == 'binomial':
+            self.mask = np.random.binomial(1, self.p, size=X.shape)/self.p
+        else:
+            raise ValueError("Dropout ntype must be: 'binomial', ")
         Z = self.mask*X
         return X, Z
     
@@ -65,16 +66,12 @@ class Dropout(layer):
 class Conv(layer):
     name = "Convelution Layer"
     def __init__(self, ntype, wshape, imshape=None, kshape=None, padding=(1, 0), roll=1):
-        self.ntype = ntype()
         self.ws = np.random.randn(wshape[0], wshape[1])/np.sqrt(wshape[0])
         self.bs = np.random.randn(1, wshape[1])
-        self.dws = np.zeros(self.ws.shape)
-        self.dbs = np.zeros(self.bs.shape)
-        self.ddws = self.dws
-        self.ddbs = self.dbs
+        super().__init__(ntype, self.ws, self.bs)
         
         self.imshape = imshape
-        self.padding = padding #Tuple with (Padding width, paddig value (float or 'min'))
+        self.padding = padding #(width, value [float or 'min'])
         self.kshape = kshape
         self.roll = roll
 
@@ -126,15 +123,15 @@ class Conv(layer):
 class Pool(layer):
     name = "Pooling Layer"
     def __init__(self, ntype, imshape, kshape):
+        
+        self.ws = np.array(0.); 
+        self.bs = np.array(0.)
+        super().__init__(lambda: ntype, self.ws, self.bs)
+        
         self.ntype = ntype
         self.imshape = imshape
         self.kshape = kshape
         self.pre_act = None
-        
-        nan = np.array(0.)
-        self.ws = nan; self.bs = nan
-        self.dws = nan; self.dbs = nan
-        self.ddws = nan; self.ddbs = nan
         
     def act(self, X):
         if self.imshape[-1]==-1: 
@@ -145,9 +142,11 @@ class Pool(layer):
         if self.ntype == 'max': 
             X = np.amax(Z, axis=(-2,-1))
             self.pre_act = np.equal(Z, np.amax(Z, axis=(-2,-1), keepdims=True))
-        if self.ntype == 'mean': 
+        elif self.ntype == 'mean': 
             X = np.mean(Z,axis=(-2,-1))
             self.pre_act = np.ones(Z.shape)*np.mean(Z, axis=(-2,-1), keepdims=True)
+        else:
+            raise ValueError("Pool ntype must be: 'max', 'mean', ")
         X = X.reshape(X.shape[0],-1)
         return Z, X
     

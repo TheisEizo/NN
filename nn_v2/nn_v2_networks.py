@@ -2,7 +2,7 @@ from nn_v2_func import util
 import numpy as np
 
 class nn:
-    name = "Basic Neural Net"
+    name = "Basic Neural Network"
     def __init__(self, layers, costf):
         self.layers = layers
         self.costf = costf()
@@ -11,7 +11,9 @@ class nn:
     def __repr__(self):
         return f'{self.name} with {self.layers} and {self.costf}'
         
-    def SGD(self, X, y, epochs=10, batch_size=10, eta=0.1, reg=None, momentum=None, test_data=None):
+    def SGD(self, train_data, test_data=None, 
+            epochs=10, batch_size=10, eta=0.1, reg=None, momentum=None):
+        X, y = train_data
         y = util.onehot(y)
         if test_data: 
             X_t, y_t = test_data
@@ -55,16 +57,18 @@ class nn:
         self.act(X)
         return self.cache[-1]['X'].argmax(axis=-1)
         
-    def act(X): raise NotImplementedError
-    def diff(self, y): raise NotImplementedError
+    def act(X): 
+        raise NotImplementedError
+    def diff(self, y): 
+        raise NotImplementedError
     
     def accuracy(self, X, y):
-        if len(y) < 1000:
+        if (len(y) <= 1000) or (len(y)/1000 != len(y)//1000):
             self.act(X)
             y_pred = self.cache[-1]['X']
             pred = y_pred.argmax(axis=-1) == y.argmax(axis=-1)
         else: #MEMORY FIX
-            res = np.array([])
+            res = np.array([])            
             for Xi, yi in zip(np.split(X, 50), np.split(y, 50),):
                 self.act(Xi)
                 yi_pred = self.cache[-1]['X']
@@ -74,7 +78,8 @@ class nn:
         return mean_pred
 
 class FF(nn):
-    name = "Feed Forward Network"
+    name = "Feed Forward Neural Network"
+    
     def act(self, X):
         if len(X.shape) < 2: X = X[np.newaxis,:]
         output = [{'Z':None, 'X':X}]
