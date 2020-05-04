@@ -1,8 +1,24 @@
 import numpy as np
-
-
+import matplotlib.pyplot as plt
+from nn_v3_func import util
 #%%
 
+#%%
+data = []
+target =[]
+t = np.linspace(0,np.pi*2,100)
+freqs = np.linspace(-5,-5,740)
+
+for freq in freqs:
+    a = np.around(np.sin(freq*t)/2+1/2,2)*100
+    a_hot = util.onehot(a)
+    for i in range(len(a_hot)-5):
+        data.append(a_hot[i:i+5])
+        target.append(a_hot[i+5])
+data = np.stack(data)
+target = np.stack(target)
+data.shape
+#%%
 
 # x = input
 # o = output

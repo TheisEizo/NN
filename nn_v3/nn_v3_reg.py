@@ -2,9 +2,11 @@ import numpy as np
 
 class reg:
     name = "Basic Regularization"    
-    def __repr__(cls): return f'{cls.name}'
+    def __repr__(cls): 
+        return f'{cls.name}'
     @staticmethod
-    def act(X): raise NotImplementedError
+    def act(X): 
+        raise NotImplementedError
 
 class L2(reg):
     def __init__(self, lmbda):
