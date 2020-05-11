@@ -4,6 +4,7 @@ os.chdir('/home/theizo/Python/nn/nn_v3')
 #%% Load MNIST dataset 
 from func import import_MNIST
 train, validate, test = import_MNIST()
+part_train = (train[0][:100], train[1][:100])
 #%% Load Sine Wave dataset
 from func import import_SIN
 train, validate, test = import_SIN()
@@ -12,15 +13,21 @@ from func import import_SEQS
 train, validate, test =import_SEQS()
 #%% Load all nn parts
 from neurons import Sigmoid, Tanh, ReLU, LReLU, Softmax, Identity
-from layers import FullCon, Dropout, Conv, Pool, Networks, RecurrentFullCon
+from layers import FullCon, Dropout, Conv, Pool, Networks
+from layers import RecurrentFullCon, LSTMFullCon
 from cost import CrossEntropy, SquaredLoss, RNNCrossEntropy
 from networks import FF
 from reg import L1, L2
+#%% LSTM: WORKS
+NN = FF(
+        [LSTMFullCon(Tanh, Sigmoid, Softmax, (4, 50, 4))],
+        RNNCrossEntropy)
+NN.SGD(train, eta=9e-4)
 #%% RNN: WORKS
 NN = FF(
         [RecurrentFullCon(Tanh, Softmax, (4, 50, 4))],
         RNNCrossEntropy)
-NN.SGD(train, eta=3e-4, momentum=0.5, printout='Loss')
+NN.SGD(train, eta=3e-4)
 #%% Networks: WORKS
 NNS = [
        FF(
@@ -31,7 +38,7 @@ NNS = [
 NN = FF(
         [Networks(Sigmoid, NNS)],
         CrossEntropy)
-NN.SGD(train)
+NN.SGD(part_train)
 #%% Conv+Pool+Dropout: WORKS
 NN = FF(
         [Conv(Identity, (25,3)),
@@ -39,13 +46,13 @@ NN = FF(
         Dropout('binomial',0.9),
         FullCon(Sigmoid, (3*13*13,10))], 
         CrossEntropy)
-NN.SGD(train)
+NN.SGD(part_train)
 #%% FullCon: WORKS
 NN = FF(
         [FullCon(Sigmoid, (28*28,30)),
         FullCon(Sigmoid, (30,10))], 
         CrossEntropy)
-NN.SGD(train)
+NN.SGD(part_train)
 #%% TO DO
 #Expand dataset
 

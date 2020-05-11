@@ -1,4 +1,5 @@
 import numpy as np
+from func import util
 
 class nn:
     name = "Basic Neural Network"
@@ -27,6 +28,9 @@ class nn:
             X_t, y_t = test_data            
         n = len(X)
         init_lst = np.arange(n)
+        if momentum:
+            for l in self.layers:
+                l.init_vs()
         for i in range(epochs):
             np.random.shuffle(init_lst)
             X, y = X[init_lst], y[init_lst]
@@ -50,8 +54,6 @@ class nn:
             
     def update(self, batch, eta, n, reg, momentum):
         for l in self.layers:
-            if momentum and 'vs' not in dir(l): 
-                l.init_vs()
             l.init_dws_dbs()
         for X, y in zip(batch[0], batch[1]):
             self.act(X, train=True)
@@ -65,13 +67,13 @@ class nn:
     
     def loss(self, X, y):
         self.act(X, train=False)
-        loss = self.costf.act(self.cache[-1]['Z'], self.cache[-1]['X'], y)
+        loss = self.costf.act(self.cache[-1]['Z'], self.cache[-1]['Y'], y)
         del self.cache
         return loss
 
     def predict(self, X):
         self.act(X, train=False)
-        res = self.cache[-1]['X']
+        res = self.cache[-1]['Y']
         del self.cache
         return res
     
@@ -98,24 +100,22 @@ class FF(nn):
     name = "Feed Forward Neural Network"
     
     def act(self, X, train):
-        if len(X.shape) < 2: 
-            X = X[np.newaxis,:]
-        output = [{'Z':None, 'X':X}]
+        X = util.mindim(X)
+        self.cache = [{'Z':None, 'Y':X}]
         for l in self.layers:
             Z, X = l.act(X, train)
-            output.append({'Z':Z,'X':X})
-        self.cache = output
+            self.cache.append({'Z':Z,'Y':X})
 
     def diff(self, y):        
         for n in range(-1,-len(self.layers)-1,-1):
             l = self.layers[n]
             if n == -1: 
                 da = self.costf.diff(self.cache[n]['Z'], 
-                                     self.cache[n]['X'], 
+                                     self.cache[n]['Y'], 
                                      y)
-                da = l.diff(da, self.cache[n-1]['X'])
+                da = l.diff(da, self.cache[n-1]['Y'])
             else:
                 da = l.diff(da, 
-                            self.cache[n-1]['X'], 
+                            self.cache[n-1]['Y'], 
                             self.layers[n+1], 
                             self.cache[n]['Z'])
