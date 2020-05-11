@@ -1,8 +1,104 @@
+
+
+for X, Y in train:
+    
+
+
+#%%
 import numpy as np
 import matplotlib.pyplot as plt
 from nn_v3_func import util
-#%%
 
+sin_wave =np.sin(np.arange(200))
+plt.plot(sin_wave[:50])
+
+X = []
+y = []
+
+seq_len = 50
+num_records = len(sin_wave) - seq_len
+
+for i in range(num_records - 50):
+    X.append(sin_wave[i:i+seq_len])
+    y.append(sin_wave[i+seq_len])
+    
+X = np.array(X)
+X = np.expand_dims(X, axis=2)
+
+y = np.array(y)
+y = np.expand_dims(y, axis=1)
+
+X_val = []
+y_val = []
+
+for i in range(num_records - 50, num_records):
+    X_val.append(sin_wave[i:i+seq_len])
+    y_val.append(sin_wave[i+seq_len])
+    
+X_val = np.array(X_val)
+X_val = np.expand_dims(X_val, axis=2)
+
+y_val = np.array(y_val)
+y_val = np.expand_dims(y_val, axis=1)
+
+min_clip_value = -10
+max_clip_value = 10
+
+#%%
+from neurons import Sigmoid, Tanh, Softmax
+from layers import RecurrentFullCon
+from cost import CrossEntropy
+from networks import FF
+
+NN = FF(
+        [RecurrentFullCon(Tanh, Softmax, (50, 100, 1), 5)],
+        CrossEntropy)
+NN.SGD((X,y),(X_val, y_val), epochs=25, printout='Loss')
+
+#%%
+learning_rate = 0.0001    
+nepoch = 25               
+T = 50                   # length of sequence
+hidden_dim = 100         
+output_dim = 1
+
+U = np.random.uniform(0, 1, (hidden_dim, T))
+W = np.random.uniform(0, 1, (hidden_dim, hidden_dim))
+V = np.random.uniform(0, 1, (output_dim, hidden_dim))
+
+bptt_truncate = 5
+min_clip_value = -10
+max_clip_value = 10
+
+print(X.shape)
+# train model
+for i in range(y.shape[0]):
+    x_i, y_i = X[i], y[i]
+    layers = []
+    prev_s = np.zeros((hidden_dim, 1))
+    dU = np.zeros(U.shape)
+    dV = np.zeros(V.shape)
+    dW = np.zeros(W.shape)
+    
+    dU_t = np.zeros(U.shape)
+    dV_t = np.zeros(V.shape)
+    dW_t = np.zeros(W.shape)
+    
+    dU_i = np.zeros(U.shape)
+    dW_i = np.zeros(W.shape)
+    
+    # forward pass
+    for t in range(T):
+        new_input = np.zeros(x_i.shape)
+        x_t = x_i[t]
+        new_input[t] = x_t
+        mulu = np.dot(U, new_input)
+        mulw = np.dot(W, prev_s)
+        add = mulw + mulu
+        s = Sigmoid.act(add)
+        mulv = np.dot(V, s)
+        layers.append({'s':s, 'prev_s':prev_s})
+        prev_s = s
 #%%
 data = []
 target =[]

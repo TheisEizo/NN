@@ -12,7 +12,7 @@ class nn:
     def SGD(self, train_data, test_data=None, 
             epochs=10, batch_size=10, 
             eta=0.1, reg=None, momentum=None,
-            printout="Accuracy",
+            printout="Loss",
             ):
         
         for l in self.layers:
@@ -44,11 +44,14 @@ class nn:
                 print('\tLoss on training data: '+str(self.loss(X, y)))
                 if test_data: 
                     print('\tLoss on test data: '+str(self.loss(X_t, y_t)))
-                
+        if momentum:
+            for l in self.layers:
+                l.clean_vs()
+            
     def update(self, batch, eta, n, reg, momentum):
         for l in self.layers:
             if momentum and 'vs' not in dir(l): 
-                l.vs = np.zeros(l.ws.shape)
+                l.init_vs()
             l.init_dws_dbs()
         for X, y in zip(batch[0], batch[1]):
             self.act(X, train=True)
@@ -65,11 +68,10 @@ class nn:
         loss = self.costf.act(self.cache[-1]['Z'], self.cache[-1]['X'], y)
         del self.cache
         return loss
-    
-        return
+
     def predict(self, X):
         self.act(X, train=False)
-        res = self.cache[-1]['X'].argmax(axis=-1)
+        res = self.cache[-1]['X']
         del self.cache
         return res
     
@@ -77,12 +79,12 @@ class nn:
         #This if loop is just a memory fix
         if (len(y) <= 1000) or (len(y)/1000 != len(y)//1000):
             y_pred = self.predict(X)
-            res = (y_pred == y.argmax(axis=-1))
+            res = (y_pred.argmax(axis=-1) == y.argmax(axis=-1))
         else: 
             res = []           
             for Xi, yi in zip(np.split(X, 50), np.split(y, 50),):
                 yi_pred = self.predict(Xi)
-                pred = (yi_pred == yi.argmax(axis=-1))
+                pred = (yi_pred.argmax(axis=-1) == yi.argmax(axis=-1))
                 res.append(pred)
         mean_pred = np.mean(res)
         return mean_pred

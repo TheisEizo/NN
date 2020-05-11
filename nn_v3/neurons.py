@@ -24,10 +24,10 @@ class Sigmoid(neuron):
 class ReLU(neuron):
     name = 'ReLU Neuron'
     @staticmethod
-    def act(X, a=0.0): 
-        return np.maximum(a*X, X)
+    def act(X, a=1e-6): 
+        return np.maximum(a, X)
     @staticmethod
-    def diff(X, a=0.0): 
+    def diff(X, a=1e-6): 
         return np.where(X>=0.0, 1.0, a)
 
 class LReLU(neuron):
