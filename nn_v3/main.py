@@ -14,20 +14,25 @@ train, validate, test =import_SEQS()
 #%% Load all nn parts
 from neurons import Sigmoid, Tanh, ReLU, LReLU, Softmax, Identity
 from layers import FullCon, Dropout, Conv, Pool, Networks
-from layers import RecurrentFullCon, LSTMFullCon
+from layers import RecurrentFullCon, LSTMFullCon, GRUFullCon
 from cost import CrossEntropy, SquaredLoss, RNNCrossEntropy
 from networks import FF
 from reg import L1, L2
+#%% GRU: 
+NN = FF(
+        [GRUFullCon(Tanh, Sigmoid, Softmax, (4, 50, 4))],
+        RNNCrossEntropy)
+NN.SGD(train, epochs=1, eta=1e-3)
 #%% LSTM: WORKS
 NN = FF(
         [LSTMFullCon(Tanh, Sigmoid, Softmax, (4, 50, 4))],
         RNNCrossEntropy)
-NN.SGD(train, eta=9e-4)
+NN.SGD(train, eta=1e-3)
 #%% RNN: WORKS
 NN = FF(
         [RecurrentFullCon(Tanh, Softmax, (4, 50, 4))],
         RNNCrossEntropy)
-NN.SGD(train, eta=3e-4)
+NN.SGD(train, eta=1e-4)
 #%% Networks: WORKS
 NNS = [
        FF(

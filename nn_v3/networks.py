@@ -74,6 +74,7 @@ class nn:
     def predict(self, X):
         self.act(X, train=False)
         res = self.cache[-1]['Y']
+        
         del self.cache
         return res
     

@@ -400,7 +400,7 @@ class RecurrentFullCon(layer):
     def diff(self, da, X, l=None, Z=None):
         self.init_ddws_ddbs()
         dda_h = np.zeros(self.Hs[0].shape)
-        da_Hs = []
+        da_s = []
         for t in reversed(range(len(X))):
             da_t = util.mindim(da[t].copy())
             X_t = util.mindim(X[t])
@@ -412,7 +412,7 @@ class RecurrentFullCon(layer):
             
             da_h = dda_h + np.dot(da_t, self.ws_hy.T) 
             da_f = da_h * self.ntype.diff(H_t)
-            da_Hs.append(da_f)
+            da_s.append(da_f)
             self.ddws_xh += np.dot(X_t.T, da_f)
             
             self.ddws_hh += np.dot(H_t_prev.T, da_f)
@@ -421,10 +421,9 @@ class RecurrentFullCon(layer):
             dda_h = np.dot(da_f, self.ws_hh.T)
             
         self.clip_ddws_ddbs('norm',gmax=0.25)
-        return da_Hs
+        return da_s
 
 class LSTMFullCon(layer):
-    
     name = "LSTM Full Connected Layer"
 
     def __init__(self, ntype, ntype_gate, ntype_out, wshape):
@@ -433,7 +432,8 @@ class LSTMFullCon(layer):
         self.ntype_out = ntype_out()
         
     def __repr__(self): 
-        return f'{self.name} with {self.ntype} in and {self.ntype_out}' 
+        return (f'{self.name} with {self.ntype} in, {self.ntype_gate} gate'
+                f'and {self.ntype_out}')
         
     def init_ws_bs(self,wshape):
         total_size = wshape[0]+wshape[1]
@@ -478,7 +478,8 @@ class LSTMFullCon(layer):
                  self.dws_v, self.dbs_v, self.ddws_f, self.ddbs_f, 
                  self.ddws_i, self.ddbs_i, self.ddws_g, self.ddbs_g, 
                  self.ddws_o, self.ddbs_o, self.ddws_v, self.ddbs_v,
-                 ]
+                 self.Zs, self.Fs, self.Is, self.Gs, 
+                 self.Os, self.Cs, self.Hs]
         for temp in temps:
             del temp
                     
@@ -550,43 +551,38 @@ class LSTMFullCon(layer):
             self.Fs = []
             self.Is = []
             self.Gs = []
-            self.Cs = [np.zeros(self.bs_f.shape)]
             self.Os = []
+            self.Cs = [np.zeros(self.bs_f.shape)]
             self.Hs = [np.zeros(self.bs_f.shape)]
-            self.Vs = []
-            self.Ys = []
 
             for t in range(len(X)):
                 X_t = util.mindim(X[t])
                 H_t = util.mindim(self.Hs[t])
                 C_t = util.mindim(self.Cs[t])
                 
-                z = np.hstack((H_t, X_t))
-                self.Zs.append(z)
+                Z = np.hstack((H_t, X_t))
+                self.Zs.append(Z)
                 
-                f = self.ntype_gate.act(np.dot(z, self.ws_f)+self.bs_f)
-                self.Fs.append(f)
+                F = self.ntype_gate.act(np.dot(Z, self.ws_f)+self.bs_f)
+                self.Fs.append(F)
                 
-                i = self.ntype_gate.act(np.dot(z, self.ws_i)+self.bs_i)
-                self.Is.append(i)
+                I = self.ntype_gate.act(np.dot(Z, self.ws_i)+self.bs_i)
+                self.Is.append(I)
                 
-                g = self.ntype_gate.act(np.dot(z, self.ws_g)+self.bs_g)
-                self.Gs.append(g)
+                G = self.ntype_gate.act(np.dot(Z, self.ws_g)+self.bs_g)
+                self.Gs.append(G)
                 
-                C_t = f*C_t + i*g
+                C_t = F*C_t + I*G
                 self.Cs.append(C_t)
                 
-                o = self.ntype_gate.act(np.dot(z, self.ws_o)+self.bs_o)
-                self.Os.append(o)
+                O = self.ntype_gate.act(np.dot(Z, self.ws_o)+self.bs_o)
+                self.Os.append(O)
                 
-                H_t = o*self.ntype.act(C_t)
+                H_t = O*self.ntype.act(C_t)
                 self.Hs.append(H_t)
                 
-                v = np.dot(H_t, self.ws_v)+self.bs_v
-                self.Vs.append(v)
-                
-                Y = self.ntype_out.act(v)
-                self.Ys.append(Y)
+            V = np.dot(H_t, self.ws_v)+self.bs_v
+            Y = self.ntype_out.act(V)
 
         else:
             Y = []
@@ -602,17 +598,18 @@ class LSTMFullCon(layer):
         C_t_next = np.zeros_like(self.Cs[0])
         H_t_next = np.zeros_like(self.Hs[0])
         
+        da_s = []
         for t in reversed(range(len(X))):
-            Z_t = util.mindim(self.Zs[t])
-            H_t = util.mindim(self.Hs[t].copy())
-            C_t = self.Cs[t]
-            C_t_prev = self.Cs[t-1]
-            
-            da_t = util.mindim(da[t].copy())
             O_t = self.Os[t]
             I_t = self.Is[t]
             G_t = self.Gs[t]
             F_t = self.Fs[t]
+            Z_t = self.Zs[t]
+            H_t = self.Hs[t]
+            C_t = self.Cs[t]
+
+            C_t_prev = self.Cs[t-1]
+            da_t = util.mindim(da[t])
             
             self.ddws_v += np.dot(H_t.T, da_t)
             self.ddbs_v += da_t
@@ -631,6 +628,8 @@ class LSTMFullCon(layer):
             self.ddws_g += np.dot(Z_t.T, da_Gs)
             self.ddbs_g += da_Gs
             
+            da_s.append(da_Cs)
+            
             da_Is = da_Cs * G_t
             da_Is = self.ntype_gate.act(I_t)*da_Is
             self.ddws_i += np.dot(Z_t.T, da_Is)
@@ -641,8 +640,194 @@ class LSTMFullCon(layer):
             self.ddws_f += np.dot(Z_t.T,da_Fs)
             self.ddbs_f += da_Fs
             
+        self.clip_ddws_ddbs('norm',gmax=0.25)
+        return da_s
+
+class GRUFullCon(layer):
+    name = "GRU Full Con Layer"
+
+    def __init__(self, ntype, ntype_gate, ntype_out, wshape):
+        super().__init__(ntype, wshape)
+        self.ntype_gate = ntype_gate()
+        self.ntype_out = ntype_out()
+        
+    def __repr__(self): 
+        return (f'{self.name} with {self.ntype} in, {self.ntype_gate} gate'
+                f'and {self.ntype_out}')
+        
+    def init_ws_bs(self,wshape):
+        total_size = wshape[0]+wshape[1]
+        self.ws_z = np.random.randn(total_size,wshape[1])/np.sqrt(total_size)
+        self.bs_z = np.random.randn(1, wshape[1])
+        self.ws_r = np.random.randn(total_size,wshape[1])/np.sqrt(total_size)
+        self.bs_r = np.random.randn(1, wshape[1])
+        self.ws_g = np.random.randn(total_size,wshape[1])/np.sqrt(total_size)
+        self.bs_g = np.random.randn(1, wshape[1])
+        self.ws_v = np.random.randn(wshape[1], wshape[2])/np.sqrt(wshape[1])
+        self.bs_v  = np.random.randn(1, wshape[2])
+        
+    def init_dws_dbs(self):
+        self.dws_z = np.zeros(self.ws_z.shape)
+        self.dbs_z = np.zeros(self.bs_z.shape)
+        self.dws_r = np.zeros(self.ws_r.shape)
+        self.dbs_r = np.zeros(self.bs_r.shape)
+        self.dws_g = np.zeros(self.ws_g.shape)
+        self.dbs_g = np.zeros(self.bs_g.shape)
+        self.dws_v = np.zeros(self.ws_v.shape)
+        self.dbs_v = np.zeros(self.bs_v.shape)
+    
+    def init_ddws_ddbs(self):
+        self.ddws_z = np.zeros(self.ws_z.shape)
+        self.ddbs_z = np.zeros(self.bs_z.shape)    
+        self.ddws_r = np.zeros(self.ws_r.shape)
+        self.ddbs_r = np.zeros(self.bs_r.shape)   
+        self.ddws_g = np.zeros(self.ws_g.shape)
+        self.ddbs_g = np.zeros(self.bs_g.shape)   
+        self.ddws_v = np.zeros(self.ws_v.shape)
+        self.ddbs_v = np.zeros(self.bs_v.shape)   
+        
+    def clean(self):
+        temps = [self.dws_z, self.dbs_z, self.dws_r, self.dbs_r, 
+                 self.dws_g, self.dbs_g, self.dws_v, self.dbs_v, 
+                 self.ddws_z, self.ddbs_z, self.ddws_r, self.ddbs_r, 
+                 self.ddws_g, self.ddbs_g, self.ddws_v, self.ddbs_v,
+                 ]
+        for temp in temps:
+            del temp
+                    
+    def init_vs(self):
+        self.vs_z  = np.zeros(self.ws_z.shape)
+        self.vs_r  = np.zeros(self.ws_r.shape)
+        self.vs_g  = np.zeros(self.ws_g.shape)
+        self.vs_v  = np.zeros(self.ws_v.shape)
+        
+    def clean_vs(self):
+        temps = [self.vs_z, self.vs_r, self.vs_g, self.vs_v]
+        for temp in temps:
+            del temp
+
+    def update_dws_dbs(self):
+        dgrads = [self.dws_z, self.dbs_z, self.dws_r, self.dbs_r, 
+                 self.dws_g, self.dbs_g, self.dws_v, self.dbs_v]
+        ddgrads = [self.ddws_z, self.ddbs_z, self.ddws_r, self.ddbs_r, 
+                   self.ddws_g, self.ddbs_g, self.ddws_v, self.ddbs_v]
+        for dgrad, ddgrad in zip(dgrads, ddgrads):
+            dgrad += ddgrad
+    
+    def clip_ddws_ddbs(self,ntype,gmin=-1,gmax=1):
+        ddgrads = [self.ddws_z, self.ddbs_z, self.ddws_r, self.ddbs_r, 
+                   self.ddws_g, self.ddbs_g, self.ddws_v, self.ddbs_v]
+        if ntype == 'minmax':
+            for ddgrad in ddgrads:
+                np.clip(ddgrad, gmin, gmax, out=ddgrad)
+        elif ntype == 'norm':
+            total_norm = 0
+            for ddgrad in ddgrads:
+                grad_norm = np.sum(np.power(ddgrad, 2))
+                total_norm += grad_norm
+            total_norm = np.sqrt(total_norm)
+            clip_coef = gmax / (total_norm + 1e-6)
+            if clip_coef < 1:
+                for ddgrad in ddgrads:
+                    ddgrad *= clip_coef
             
+    def update_ws_bs(self,batch, eta, n, reg, momentum):
+        grads = [self.ws_z, self.ws_r,self.ws_g, self.ws_v]
+        dgrads = [self.dws_z, self.dws_r,self.dws_g, self.dws_v]
+        if momentum: 
+            vgrads = [self.vs_z, self.vs_r, self.vs_g, self.vs_v]
+        for i, grad in enumerate(grads):
+            if momentum:
+                vgrads[i] = momentum*vgrads[i] - eta/len(batch)*dgrads[i]
+                
+                if reg:
+                    vgrads[i] += -reg.act(eta=eta,ws=vgrads[i],n=n)
+                grad += vgrads[i]
+            else:
+                grad += - eta/len(batch)*dgrads[i]
+            if reg:
+                grads[i] += -reg.act(eta=eta,ws=grads[i],n=n)
+        grads = [self.bs_z, self.bs_r, self.bs_g, self.bs_v]
+        dgrads = [self.dbs_z, self.dbs_r, self.dbs_g, self.dbs_v]
+        for i, grad in enumerate(grads):
+            grad += - eta/len(batch)*dgrads[i]
+    
+    def act(self, X, train):
+        if train: 
+            self.Xs = []
+            self.Zs = []
+            self.Rs = []
+            self.Gs = []
+            self.Hs = [np.zeros(self.bs_z.shape)]
+
+
+            for t in range(len(X)):
+                X_ti = util.mindim(X[t])
+                H_t = util.mindim(self.Hs[t])
+                X_t = np.hstack((H_t, X_ti))
+                self.Xs.append(X_t)
+                
+                Z = self.ntype_gate.act(np.dot(X_t, self.ws_z)+self.bs_z)
+                self.Zs.append(Z)
+                
+                R = self.ntype_gate.act(np.dot(X_t, self.ws_r)+self.bs_r)
+                self.Rs.append(R)
+                
+                X_t = np.hstack((H_t*R, X_ti))
+                G = self.ntype.act(np.dot(X_t, self.ws_g)+self.bs_g)
+                self.Gs.append(G)
+                
+                H_t = (1-Z)*H_t+Z*G
+                self.Hs.append(H_t)
+                
+            V = np.dot(H_t, self.ws_v)+self.bs_v
+            Y = self.ntype_out.act(V)
+
+        else:
+            Y = []
+            for x in X[0]:
+                x = util.mindim(x)
+                _, y = self.act(x, train=True)
+                Y.append(y)
+            Y = np.array(Y)
+        return 0, Y
+    
+    def diff(self, da, X, l=None, Z=None):
+        self.init_ddws_ddbs()
+        H_t_next = np.zeros_like(self.Hs[0])
+        
+        da_s = []
+        for t in reversed(range(len(X))):
+            X_t = self.Xs[t]
+            Z_t = self.Zs[t]
+            R_t = self.Rs[t]
+            G_t = self.Gs[t]
+            H_t = self.Hs[t]
             
+            H_t_prev = self.Hs[t-1]
+            da_t = util.mindim(da[t])
+            
+            self.ddws_v += np.dot(H_t.T, da_t)
+            self.ddbs_v += da_t
+            
+            da_Hs = H_t_next.copy()
+            da_Hs += np.dot(da_t, self.ws_v.T)
+            
+            da_Gs = da_Hs*Z_t
+            da_Gs = da_Gs*self.ntype.diff(G_t)
+            self.ddws_g += np.dot(X_t.T,da_Gs)
+            self.ddbs_g += da_Gs       
+            
+            da_Rs = H_t_prev*da_Gs
+            da_Rs = self.ntype_gate.diff(R_t)*da_Rs
+            self.ddws_r += np.dot(X_t.T,da_Rs)
+            self.ddbs_r += da_Gs 
+            
+            da_Zs = self.ntype_gate.diff(Z_t)
+            self.ddws_z += np.dot(X_t.T, da_Zs)
+            self.ddbs_z += da_Zs
+            
+            da_s.append(da_Hs)
             
         self.clip_ddws_ddbs('norm',gmax=0.25)
-        return da
+        return da_s
