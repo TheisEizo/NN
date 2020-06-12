@@ -13,52 +13,66 @@ class layer:
         raise NotImplementedError(f'{self.name}')
     def diff(self, *args, **kwargs): 
         raise NotImplementedError(f'{self.name}')
-    def init_ws_bs(self):
-        raise NotImplementedError(f'{self.name}')
         
+    def init_ws_bs(self, *args):
+        raise NotImplementedError(f'{self.name}')
     def init_dws_dbs(self):
         self.dws = np.zeros(self.ws.shape)
         self.dbs = np.zeros(self.bs.shape)
-        
     def init_vs(self):
         self.vs  = np.zeros(self.ws.shape)
         
+    def get_ws_bs(self,split):
+        if split:
+            return [self.ws], [self.bs]
+        return [self.ws, self.bs]
+    def get_dws_dbs(self,split):
+        if split:
+            return [self.dws], [self.dbs]
+        return [self.dws, self.dbs]
+    def get_ddws_ddbs(self,split):
+        if split:
+            return [self.ddws], [self.ddbs]
+        return [self.ddws, self.ddbs]
+    def get_vs(self,split):
+        return [self.vs]
+        
     def clean(self):
-        temps = [self.dws, self.dbs, self.ddws, self.ddbs]
+        temps = self.get_dws_dbs(False)+self.get_ddws_ddbs(False)
+        for temp in temps:
+            del temp
+    def clean_vs(self):
+        temps = self.get_vs(False)
         for temp in temps:
             del temp
         
-    def clean_vs(self):
-        del self.vs
-        
     def update_dws_dbs(self):
-        dgrads = [self.dws, self.dbs]
-        ddgrads = [self.ddws, self.ddbs]
+        dgrads = self.get_dws_dbs(False)
+        ddgrads = self.get_ddws_ddbs(False)
         for i, dgrad in enumerate(dgrads):
             dgrad += ddgrads[i]
-        
+            
     def update_ws_bs(self,batch, eta, n, reg, momentum):
-        if momentum:
-            self.vs = momentum*self.vs - eta/len(batch)*self.dws
+        ws, bs  = self.get_ws_bs(True)
+        dws, dbs = self.get_dws_dbs(True)
+        if momentum: 
+            vs = self.get_vs(True)
+        for i, w in enumerate(ws):
+            if momentum:
+                vs[i] = momentum*vs[i] - eta/len(batch)*dws[i]
+                
+                if reg:
+                    vs[i] += -reg.act(eta=eta,ws=vs[i],n=n)
+                w += vs[i]
+            else:
+                w += - eta/len(batch)*dws[i]
             if reg:
-                self.vs += -reg.act(eta=eta,ws=self.vs,n=n)
-            self.ws += self.vs
-        else:
-            self.ws += -eta/len(batch)*self.dws
-        if reg:
-            self.ws += -reg.act(eta=eta,ws=self.ws,n=n)
-        
-        self.bs += -eta/len(batch)*self.dbs
-    
-class FullCon(layer):
-    name = "Full Connected Layer"
-        
-    def init_ws_bs(self, wshape):
-        self.ws = np.random.randn(wshape[0], wshape[1])/np.sqrt(wshape[0])
-        self.bs = np.random.randn(1, wshape[1])
+                w += -reg.act(eta=eta,ws=w,n=n)
+        for i, b in enumerate(bs):
+            b += - eta/len(batch)*dbs[i]
     
     def clip_ddws_ddbs(self,ntype="minmax",gmin=-.25,gmax=.25):
-        ddgrads = [self.ddws, self.ddbs]
+        ddgrads = self.get_ddws_ddbs(False)
         if ntype == 'minmax':
             for ddgrad in ddgrads:
                 np.clip(ddgrad, gmin, gmax, out=ddgrad)
@@ -72,6 +86,29 @@ class FullCon(layer):
             if clip_coef < 1:
                 for ddgrad in ddgrads:
                     ddgrad *= clip_coef
+                    
+    def clip_ws_bs(self,ntype="minmax",gmin=-.25,gmax=.25):
+        ddgrads = self.get_ws_bs(False)
+        if ntype == 'minmax':
+            for ddgrad in ddgrads:
+                np.clip(ddgrad, gmin, gmax, out=ddgrad)
+        elif ntype == 'norm':
+            total_norm = 0
+            for ddgrad in ddgrads:
+                grad_norm = np.sum(np.power(ddgrad, 2))
+                total_norm += grad_norm
+            total_norm = np.sqrt(total_norm)
+            clip_coef = gmax / (total_norm + 1e-6)
+            if clip_coef < 1:
+                for ddgrad in ddgrads:
+                    ddgrad *= clip_coef
+                    
+class FullCon(layer):
+    name = "Full Connected Layer"
+        
+    def init_ws_bs(self, wshape):
+        self.ws = np.random.randn(wshape[0], wshape[1])/np.sqrt(wshape[0])
+        self.bs = np.random.randn(1, wshape[1])
             
     def act(self, X, _):
         X = util.mindim(X)
@@ -87,8 +124,8 @@ class FullCon(layer):
         else:
             self.ddbs = da; 
             self.ddws = np.dot(X.T, da)
-        if self.ntype.name in ['ReLU Neuron',]:
-            self.clip_ddws_ddbs()
+        if self.ntype.name in ['ReLU Neuron','Swish Neuron']:
+            self.clip_ddws_ddbs('norm')
         return da
 
 class Dropout(layer):
@@ -135,38 +172,8 @@ class Conv(layer):
         self.ws = np.random.randn(wshape[0], wshape[1])/np.sqrt(wshape[0])
         self.bs = np.random.randn(1, wshape[1])
         
-    def act(self, X, _):    
-        if self.imshape == None: 
-            self.imshape = (util.int_sqrt(X.shape[-1]),)*2
-        if self.kshape == None: 
-            self.kshape = (util.int_sqrt(self.ws.shape[0]),)*2
-        X = util.mindim(X)
-        X = X.reshape(X.shape[:-1]+self.imshape)
-        X = self.im2col(X, self.padding, self.kshape, self.roll)
-        X = np.dot(X, self.ws) + self.bs
-        Z = X.reshape(X.shape[0],-1)
-        Y = self.ntype.act(Z)
-        return Z, Y
-    
-    def diff(self, da, X, l=None, Z=None):
-        if l:
-            da = da.reshape((da.shape[0], -1, self.ws.shape[-1]))
-            Z = Z.reshape((Z.shape[0], -1, self.ws.shape[-1]))
-            da = np.dot(da, l.ws.T) * self.ntype.diff(Z)
-            
-            X = X.reshape(X.shape[:-1]+self.imshape)
-            X = self.im2col(X, self.padding, self.kshape, self.roll)
-            da = da.reshape((-1, da.shape[-1]))
-            X = X.reshape((-1, X.shape[-1]))     
-            self.ddbs = np.sum(da, axis=0)
-            self.ddws = np.dot(X.T, da)
-        else:
-            self.ddbs = da; 
-            self.ddws = np.dot(X.T, da)
-        return da
-    
     @staticmethod
-    def im2col(X, padding, kshape, roll):
+    def _im2col(X, padding, kshape, roll):
         p_shape = ((0,0),)*(len(X.shape)-2)+((padding[0],)*2,)*2
         if padding[1] == 'min': 
             X = np.pad(X, p_shape, 'constant', constant_values=X.min())
@@ -183,6 +190,38 @@ class Conv(layer):
         X = np.moveaxis(X,-2,0)
         return X
     
+    def act(self, X, _):    
+        if self.imshape == None: 
+            self.imshape = (util.int_sqrt(X.shape[-1]),)*2
+        if self.kshape == None: 
+            self.kshape = (util.int_sqrt(self.ws.shape[0]),)*2
+        X = util.mindim(X)
+        X = X.reshape(X.shape[:-1]+self.imshape)
+        X = self._im2col(X, self.padding, self.kshape, self.roll)
+        X = np.dot(X, self.ws) + self.bs
+        Z = X.reshape(X.shape[0],-1)
+        Y = self.ntype.act(Z)
+        return Z, Y
+    
+    def diff(self, da, X, l=None, Z=None):
+        if l:
+            da = da.reshape((da.shape[0], -1, self.ws.shape[-1]))
+            Z = Z.reshape((Z.shape[0], -1, self.ws.shape[-1]))
+            da = np.dot(da, l.ws.T) * self.ntype.diff(Z)
+            
+            X = X.reshape(X.shape[:-1]+self.imshape)
+            X = self._im2col(X, self.padding, self.kshape, self.roll)
+            da = da.reshape((-1, da.shape[-1]))
+            X = X.reshape((-1, X.shape[-1]))     
+            self.ddbs = np.sum(da, axis=0)
+            self.ddws = np.dot(X.T, da)
+        else:
+            self.ddbs = da; 
+            self.ddws = np.dot(X.T, da)
+        return da
+    
+
+    
 class Pool(layer):
     name = "Pooling Layer"
     def __init__(self, ntype, imshape, kshape):
@@ -193,6 +232,22 @@ class Pool(layer):
     def init_ws_bs(self, *args):
         self.ws = np.array(0.)
         self.bs = np.array(0.)
+    
+    @staticmethod    
+    def _im_split(X, kshape):
+        X = np.array(np.split(X,X.shape[-1]/kshape[-1],axis=-1))
+        X = np.array(np.split(X,X.shape[-2]/kshape[-2],axis=-2))
+        X = np.moveaxis(X,2,0)
+        X = X.reshape((X.shape[0],)+(-1,)+X.shape[3:])
+        X = np.moveaxis(X,1,2)
+        return X
+
+    @staticmethod
+    def _im_collect(X, imshape, modify=1.):
+        X = X.reshape((X.shape[0],imshape[0],-1))
+        X = X.reshape(X.shape+(1,1))*modify
+        X = X.reshape((X.shape[0], -1))
+        return X
         
     def act(self, X, _):
         X = util.mindim(X)
@@ -200,7 +255,7 @@ class Pool(layer):
             end_shape = (util.int_sqrt(X.shape[-1]/self.imshape[0]),)*2
             self.imshape = (self.imshape[0],) + end_shape
         X = X.reshape(X.shape[:-1]+self.imshape)
-        Z = self.im_split(X, self.kshape)
+        Z = self._im_split(X, self.kshape)
         if self.ntype == 'max': 
             Y = np.amax(Z, axis=(-2,-1))
             self.pre_act = np.equal(Z, 
@@ -217,28 +272,12 @@ class Pool(layer):
     def diff(self, da, X, l=None, Z=None):
         if l: 
             da = np.dot(da, l.ws.T)
-            da = self.im_collect(da, self.imshape, self.pre_act)
+            da = self._im_collect(da, self.imshape, self.pre_act)
         del self.pre_act
         self.ddws = np.array(0.)
         self.ddbs = np.array(0.)
         return da
         
-    @staticmethod    
-    def im_split(X, kshape):
-        X = np.array(np.split(X,X.shape[-1]/kshape[-1],axis=-1))
-        X = np.array(np.split(X,X.shape[-2]/kshape[-2],axis=-2))
-        X = np.moveaxis(X,2,0)
-        X = X.reshape((X.shape[0],)+(-1,)+X.shape[3:])
-        X = np.moveaxis(X,1,2)
-        return X
-    
-    @staticmethod
-    def im_collect(X, imshape, modify=1.):
-        X = X.reshape((X.shape[0],imshape[0],-1))
-        X = X.reshape(X.shape+(1,1))*modify
-        X = X.reshape((X.shape[0], -1))
-        return X
-
 #class BatchNorm(layer):
     #https://github.com/wiseodd/hipsternet/blob/master/hipsternet/layer.py
 
@@ -267,13 +306,13 @@ class Networks(layer):
     
     def act(self, X, _):
         X = util.mindim(X)
-        A = self.act_layers(X)
+        A = self._act_layers(X)
         Z = np.dot(A, self.ws)+self.bs
         Y = self.ntype.act(np.squeeze(Z, axis=-1))   
         return Z, Y
     
     def diff(self, da, X, l=None, Z=None):
-        X = self.act_layers(X)
+        X = self._act_layers(X)
         X = X.reshape((-1,X.shape[-1]))
         if l:
             da = np.dot(da, l.ws.T)*self.ntype.diff(Z)
@@ -284,7 +323,7 @@ class Networks(layer):
             self.ddws = np.dot(X.T,da.T)
         return da
     
-    def act_layers(self, X):
+    def _act_layers(self, X):
         res = []
         for network in self.networks:
             network.act(X, train=False)
@@ -322,69 +361,26 @@ class RecurrentFullCon(layer):
         self.ddws_hy = np.zeros(self.ws_hy.shape)
         self.ddbs_y = np.zeros(self.bs_y.shape)
         self.ddws_hh = np.zeros(self.ws_hh.shape)
-    
-    def clean(self):
-        temps = [self.dws_xh, self.dbs_h, self.dws_hy, self.dbs_y, 
-                  self.dws_hh, self.ddws_xh, self.ddbs_h, self.ddws_hy, 
-                  self.ddbs_y, self.ddws_hh,self.Hs, self.Ys]
-        for temp in temps:
-            del temp
-                    
+
     def init_vs(self):
         self.vs_xh  = np.zeros(self.ws_xh.shape)
         self.vs_hh  = np.zeros(self.ws_hh.shape)
         self.vs_hy  = np.zeros(self.ws_hy.shape)
         
-    def clean_vs(self):
-        temps = [self.vs_xh, self.vs_hh, self.vs_hy]
-        for temp in temps:
-            del temp
-
-    def update_dws_dbs(self):
-        dgrads = [self.dws_xh, self.dbs_h, self.dws_hy, 
-                      self.dbs_y, self.dws_hh]
-        ddgrads = [self.ddws_xh, self.ddbs_h, self.ddws_hy, 
-                      self.ddbs_y, self.ddws_hh]
-        for dgrad, ddgrad in zip(dgrads, ddgrads):
-            dgrad += ddgrad
-    
-    def clip_ddws_ddbs(self,ntype="norm",gmin=-1,gmax=1):
-        ddgrads = [self.ddws_xh, self.ddbs_h, self.ddws_hy, 
-                      self.ddbs_y, self.ddws_hh]
-        if ntype == 'minmax':
-            for ddgrad in ddgrads:
-                np.clip(ddgrad, gmin, gmax, out=ddgrad)
-        elif ntype == 'norm':
-            total_norm = 0
-            for ddgrad in ddgrads:
-                grad_norm = np.sum(np.power(ddgrad, 2))
-                total_norm += grad_norm
-            total_norm = np.sqrt(total_norm)
-            clip_coef = gmax / (total_norm + 1e-6)
-            if clip_coef < 1:
-                for ddgrad in ddgrads:
-                    ddgrad *= clip_coef
-            
-    def update_ws_bs(self,batch, eta, n, reg, momentum):
-        grads = [self.ws_xh, self.ws_hy, self.ws_hh]
-        dgrads = [self.dws_xh, self.dws_hy, self.dws_hh]
-        if momentum: 
-            vgrads = [self.vs_xh, self.vs_hy, self.vs_hh]
-        for i, grad in enumerate(grads):
-            if momentum:
-                vgrads[i] = momentum*vgrads[i] - eta/len(batch)*dgrads[i]
-                
-                if reg:
-                    vgrads[i] += -reg.act(eta=eta,ws=vgrads[i],n=n)
-                grad += vgrads[i]
-            else:
-                grad += - eta/len(batch)*dgrads[i]
-            if reg:
-                grads[i] += -reg.act(eta=eta,ws=grads[i],n=n)
-        grads = [self.bs_h, self.bs_y]
-        dgrads = [self.dbs_h, self.dbs_y]
-        for i, grad in enumerate(grads):
-            grad += - eta/len(batch)*dgrads[i]
+    def get_ws_bs(self,split):
+        if split:
+            return [self.ws_xh, self.ws_hy, self.ws_hh], [self.bs_h, self.bs_y]
+        return [self.ws_xh, self.ws_hy, self.ws_hh, self.bs_h, self.bs_y]
+    def get_dws_dbs(self,split):
+        if split:
+            return [self.dws_xh, self.dws_hy, self.dws_hh], [self.dbs_h, self.dbs_y]
+        return [self.dws_xh, self.dws_hy, self.dws_hh, self.dbs_h, self.dbs_y]
+    def get_ddws_ddbs(self,split):
+        if split:
+            return [self.ddws_xh, self.ddws_hy, self.ddws_hh], [self.ddbs_h, self.ddbs_y]
+        return [self.ddws_xh, self.ddws_hy, self.ddws_hh, self.ddbs_h, self.ddbs_y]
+    def get_vs(self,split):
+        return [self.vs_xh, self.vs_hh, self.vs_hy]
         
     def act(self, X, train):
         if train : 
@@ -482,81 +478,36 @@ class LSTMFullCon(layer):
         self.ddbs_o = np.zeros(self.bs_o.shape)   
         self.ddws_v = np.zeros(self.ws_v.shape)
         self.ddbs_v = np.zeros(self.bs_v.shape)   
-        
-    def clean(self):
-        temps = [self.dws_f, self.dbs_f, self.dws_i, self.dbs_i, 
-                 self.dws_g, self.dbs_g, self.dws_o, self.dbs_o, 
-                 self.dws_v, self.dbs_v, self.ddws_f, self.ddbs_f, 
-                 self.ddws_i, self.ddbs_i, self.ddws_g, self.ddbs_g, 
-                 self.ddws_o, self.ddbs_o, self.ddws_v, self.ddbs_v,
-                 self.Zs, self.Fs, self.Is, self.Gs, 
-                 self.Os, self.Cs, self.Hs]
-        for temp in temps:
-            del temp
-                    
+                   
     def init_vs(self):
         self.vs_f  = np.zeros(self.ws_f.shape)
         self.vs_i  = np.zeros(self.ws_i.shape)
         self.vs_g  = np.zeros(self.ws_g.shape)
         self.vs_o  = np.zeros(self.ws_o.shape)
         self.vs_v  = np.zeros(self.ws_v.shape)
-        
-    def clean_vs(self):
-        temps = [self.vs_f, self.vs_i, self.vs_g, self.vs_o, self.vs_v]
-        for temp in temps:
-            del temp
-
-    def update_dws_dbs(self):
-        dgrads = [self.dws_f, self.dbs_f, self.dws_i, self.dbs_i, 
-                 self.dws_g, self.dbs_g, self.dws_o, self.dbs_o, 
-                 self.dws_v, self.dbs_v]
-        ddgrads = [self.ddws_f, self.ddbs_f, self.ddws_i, self.ddbs_i, 
-                   self.ddws_g, self.ddbs_g, self.ddws_o, self.ddbs_o, 
-                   self.ddws_v, self.ddbs_v]
-        for dgrad, ddgrad in zip(dgrads, ddgrads):
-            dgrad += ddgrad
     
-    def clip_ddws_ddbs(self,ntype,gmin=-1,gmax=1):
-        ddgrads = [self.ddws_f, self.ddbs_f, self.ddws_i, self.ddbs_i, 
-                   self.ddws_g, self.ddbs_g, self.ddws_o, self.ddbs_o, 
-                   self.ddws_v, self.ddbs_v]
-        if ntype == 'minmax':
-            for ddgrad in ddgrads:
-                np.clip(ddgrad, gmin, gmax, out=ddgrad)
-        elif ntype == 'norm':
-            total_norm = 0
-            for ddgrad in ddgrads:
-                grad_norm = np.sum(np.power(ddgrad, 2))
-                total_norm += grad_norm
-            total_norm = np.sqrt(total_norm)
-            clip_coef = gmax / (total_norm + 1e-6)
-            if clip_coef < 1:
-                for ddgrad in ddgrads:
-                    ddgrad *= clip_coef
-            
-    def update_ws_bs(self,batch, eta, n, reg, momentum):
-        grads = [self.ws_f, self.ws_i,self.ws_g, self.ws_o, self.ws_v]
-        dgrads = [self.dws_f, self.dws_i,self.dws_g, self.dws_o, self.dws_v]
-        if momentum: 
-            vgrads = [self.vs_f, self.vs_i, self.vs_g, self.vs_o, self.vs_v]
-        for i, grad in enumerate(grads):
-            if momentum:
-                vgrads[i] = momentum*vgrads[i] - eta/len(batch)*dgrads[i]
-                
-                if reg:
-                    vgrads[i] += -reg.act(eta=eta,ws=vgrads[i],n=n)
-                grad += vgrads[i]
-            else:
-                grad += - eta/len(batch)*dgrads[i]
-            if reg:
-                grads[i] += -reg.act(eta=eta,ws=grads[i],n=n)
-        grads = [self.bs_f, self.bs_i,self.bs_g, self.bs_o, self.bs_v]
-        dgrads = [self.dbs_f, self.dbs_i,self.dbs_g, self.dbs_o, self.dbs_v]
-        for i, grad in enumerate(grads):
-            grad += - eta/len(batch)*dgrads[i]
+    def get_ws_bs(self,split):
+        if split:
+            return ([self.ws_f, self.ws_i, self.ws_g, self.ws_o, self.ws_v],
+                    [self.bs_f, self.bs_i, self.bs_g, self.bs_o, self.bs_v])
+        return [self.ws_f, self.ws_i, self.ws_g, self.ws_o, self.ws_v,
+                self.bs_f, self.bs_i, self.bs_g, self.bs_o, self.bs_v]
+    def get_dws_dbs(self,split):
+        if split:
+            return ([self.dws_f, self.dws_i, self.dws_g, self.dws_o, self.dws_v],
+                    [self.dbs_f, self.dbs_i, self.dbs_g, self.dbs_o, self.dbs_v])
+        return [self.dws_f, self.dws_i, self.dws_g, self.dws_o, self.dws_v,
+                self.dbs_f, self.dbs_i, self.dbs_g, self.dbs_o, self.dbs_v]
+    def get_ddws_ddbs(self,split):
+        if split:
+            return ([self.ddws_f, self.ddws_i, self.ddws_g, self.ddws_o, self.ddws_v],
+                    [self.ddbs_f, self.ddbs_i, self.ddbs_g, self.ddbs_o, self.ddbs_v])
+        return [self.ddws_f, self.ddws_i, self.ddws_g, self.ddws_o, self.ddws_v,
+                self.ddbs_f, self.ddbs_i, self.ddbs_g, self.ddbs_o, self.ddbs_v]
+    def get_vs(self,split):
+        return [self.vs_f, self.vs_i, self.vs_g, self.vs_o, self.vs_v]
     
     def act(self, X, train):
-        
         if train: 
             self.Zs = []
             self.Fs = []
@@ -696,72 +647,33 @@ class GRUFullCon(layer):
         self.ddbs_g = np.zeros(self.bs_g.shape)   
         self.ddws_v = np.zeros(self.ws_v.shape)
         self.ddbs_v = np.zeros(self.bs_v.shape)   
-        
-    def clean(self):
-        temps = [self.dws_z, self.dbs_z, self.dws_r, self.dbs_r, 
-                 self.dws_g, self.dbs_g, self.dws_v, self.dbs_v, 
-                 self.ddws_z, self.ddbs_z, self.ddws_r, self.ddbs_r, 
-                 self.ddws_g, self.ddbs_g, self.ddws_v, self.ddbs_v,
-                 ]
-        for temp in temps:
-            del temp
-                    
+
     def init_vs(self):
         self.vs_z  = np.zeros(self.ws_z.shape)
         self.vs_r  = np.zeros(self.ws_r.shape)
         self.vs_g  = np.zeros(self.ws_g.shape)
         self.vs_v  = np.zeros(self.ws_v.shape)
-        
-    def clean_vs(self):
-        temps = [self.vs_z, self.vs_r, self.vs_g, self.vs_v]
-        for temp in temps:
-            del temp
-
-    def update_dws_dbs(self):
-        dgrads = [self.dws_z, self.dbs_z, self.dws_r, self.dbs_r, 
-                 self.dws_g, self.dbs_g, self.dws_v, self.dbs_v]
-        ddgrads = [self.ddws_z, self.ddbs_z, self.ddws_r, self.ddbs_r, 
-                   self.ddws_g, self.ddbs_g, self.ddws_v, self.ddbs_v]
-        for dgrad, ddgrad in zip(dgrads, ddgrads):
-            dgrad += ddgrad
     
-    def clip_ddws_ddbs(self,ntype,gmin=-1,gmax=1):
-        ddgrads = [self.ddws_z, self.ddbs_z, self.ddws_r, self.ddbs_r, 
-                   self.ddws_g, self.ddbs_g, self.ddws_v, self.ddbs_v]
-        if ntype == 'minmax':
-            for ddgrad in ddgrads:
-                np.clip(ddgrad, gmin, gmax, out=ddgrad)
-        elif ntype == 'norm':
-            total_norm = 0
-            for ddgrad in ddgrads:
-                grad_norm = np.sum(np.power(ddgrad, 2))
-                total_norm += grad_norm
-            total_norm = np.sqrt(total_norm)
-            clip_coef = gmax / (total_norm + 1e-6)
-            if clip_coef < 1:
-                for ddgrad in ddgrads:
-                    ddgrad *= clip_coef
-            
-    def update_ws_bs(self,batch, eta, n, reg, momentum):
-        grads = [self.ws_z, self.ws_r,self.ws_g, self.ws_v]
-        dgrads = [self.dws_z, self.dws_r,self.dws_g, self.dws_v]
-        if momentum: 
-            vgrads = [self.vs_z, self.vs_r, self.vs_g, self.vs_v]
-        for i, grad in enumerate(grads):
-            if momentum:
-                vgrads[i] = momentum*vgrads[i] - eta/len(batch)*dgrads[i]
-                
-                if reg:
-                    vgrads[i] += -reg.act(eta=eta,ws=vgrads[i],n=n)
-                grad += vgrads[i]
-            else:
-                grad += - eta/len(batch)*dgrads[i]
-            if reg:
-                grads[i] += -reg.act(eta=eta,ws=grads[i],n=n)
-        grads = [self.bs_z, self.bs_r, self.bs_g, self.bs_v]
-        dgrads = [self.dbs_z, self.dbs_r, self.dbs_g, self.dbs_v]
-        for i, grad in enumerate(grads):
-            grad += - eta/len(batch)*dgrads[i]
+    def get_ws_bs(self,split):
+        if split:
+            return ([self.ws_z, self.ws_r, self.ws_g, self.ws_v],
+                    [self.bs_z, self.bs_r, self.bs_g, self.bs_v])
+        return [self.ws_z, self.ws_r, self.ws_g, self.ws_v,
+                self.bs_z, self.bs_r, self.bs_g, self.bs_v]
+    def get_dws_dbs(self,split):
+        if split:
+            return ([self.dws_z, self.dws_r, self.dws_g, self.dws_v],
+                    [self.dbs_z, self.dbs_r, self.dbs_g, self.dbs_v])
+        return [self.dws_z, self.dws_r, self.dws_g, self.dws_v,
+                self.dbs_z, self.dbs_r, self.dbs_g, self.dbs_v]
+    def get_ddws_ddbs(self,split):
+        if split:
+            return ([self.ddws_z, self.ddws_r, self.ddws_g, self.ddws_v],
+                    [self.ddbs_z, self.ddbs_r, self.ddbs_g, self.ddbs_v])
+        return [self.ddws_z, self.ddws_r, self.ddws_g, self.ddws_v,
+                self.ddbs_z, self.ddbs_r, self.ddbs_g, self.ddbs_v]
+    def get_vs(self,split):
+        return [self.vs_z, self.vs_r, self.vs_g, self.vs_v]
     
     def act(self, X, train):
         if train: 

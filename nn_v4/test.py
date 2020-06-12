@@ -1,4 +1,28 @@
-""" GAN TEST """
+#%% GNN TEST
+import numpy as np
+X = np.eye(5, 5)
+n = X.shape[0]
+np.random.shuffle(X)
+
+feat_dim = 3
+W = np.random.uniform(-np.sqrt(1. / feat_dim), 
+                      np.sqrt(1. / feat_dim), 
+                      (len(X), feat_dim))
+
+L_0 = np.dot(X,W)
+print(X)
+print(W)
+print(L_0)
+
+A = np.random.randint(2, size=X.shape)
+A = (A + A.T)
+A[A > 1] = 1
+print(A) 
+
+L_1 = np.dot(A, L_0)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+print()
+
+#%% GAN TEST
 import matplotlib.pyplot as plt
 import numpy as np
 #%%

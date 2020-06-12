@@ -167,8 +167,9 @@ class GAN(nn):
                 plt.imshow(z.reshape(28,28))
                 plt.title(f'Epoch {i+1}')
                 plt.show()
-            eta *= (1-eta_decay)
-            print(f'Learn Rate= {eta}')
+            if eta_decay != 0.:
+                eta *= (1-eta_decay)
+                print(f'\tLearn Rate = {eta}')
         
         del self.gen.cache
         del self.dis.cache
@@ -180,22 +181,23 @@ class GAN(nn):
                 l.clean_vs()
                 
     def update(self, batch, eta, n, reg, momentum):
-        for l in self.gen.layers+self.dis.layers:
+        layers = self.gen.layers+self.dis.layers
+        
+        for l in layers:
             l.init_dws_dbs()
             
         for X_true in batch:
-        #if True:
-            #X_true = batch
-            #print(X_true.shape)
             self.act(X_true, train=True)
             self.diff(None)
             
-            for l in self.gen.layers+self.dis.layers:
+            for l in layers:
+                l.clip_ddws_ddbs('norm')
                 l.clip_ddws_ddbs()
                 l.update_dws_dbs()
-                
-        for l in self.gen.layers+self.dis.layers:
+
+        for l in layers:
             l.update_ws_bs(batch, eta, n, reg, momentum)
+            #l.clip_ws_bs('norm')
     
     def generate(self, n):
         z_len = self.gen.layers[0].ws.shape[0]
@@ -217,21 +219,23 @@ class GAN(nn):
     def diff(self, _):
         self.dis.cache = self.dis.cache_true
         _ = self.dis.diff(self.dis.cache_true[-1]['Y'])
-        true_dis_ddws_ddbs = [(l.ddws, l.ddbs) for l in self.dis.layers]
+        true_dis_ddws_ddbs = [(l.get_ddws_ddbs(False)) for l in self.dis.layers].copy()
         
         self.dis.cache = self.dis.cache_fake
         _ = self.dis.diff(None)
-        fake_dis_ddws_ddbs = [(l.ddws, l.ddbs) for l in self.dis.layers]
+        fake_dis_ddws_ddbs = [(l.get_ddws_ddbs(False)) for l in self.dis.layers].copy()
         
         da = self.dis.diff(self.dis.cache_fake[-1]['Y'])
         da = np.dot(da, self.dis.layers[0].ws.T)
         _ = self.gen.diff((da,))
         
-        zips = zip(self.dis.layers, true_dis_ddws_ddbs,fake_dis_ddws_ddbs)
-        for l, (t_w, t_b),(f_w, f_b) in zips:
-            l.ddws = t_w + f_w
-            l.ddbs = t_b + f_b
-
+        layer_zip = zip(self.dis.layers, true_dis_ddws_ddbs,fake_dis_ddws_ddbs)
+        for l, true_ddws_ddbs, fake_ddws_ddbs in layer_zip:
+            grad_zip = zip(true_ddws_ddbs, fake_ddws_ddbs)
+            ddws_ddbs = l.get_ddws_ddbs(False)
+            for n, (true_ddw_ddb, fake_ddw_ddb) in enumerate(grad_zip):
+                ddws_ddbs[n] = (true_ddw_ddb + fake_ddw_ddb)
+                
     def loss(self, X):
         self.act(X, train=False)
         

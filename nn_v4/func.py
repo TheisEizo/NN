@@ -1,6 +1,6 @@
 import numpy as np
 
-def import_MNIST() -> tuple:
+def import_MNIST(morph:str = None) -> tuple:
     """
     Using the sklearn to download the openml MNIST 784 dataset. 
     https://www.openml.org/d/554
@@ -20,7 +20,8 @@ def import_MNIST() -> tuple:
     from sklearn.datasets import fetch_openml
     X, y = fetch_openml('mnist_784', version=1, return_X_y=True)
     X = X/X.max()
-    X = (X-X.mean())/X.std()
+    if morph == 'norm':
+        X = (X-X.mean())/X.std()
     y = util.onehot(y)
     return (X[:50000], y[:50000]),(X[50000:60000], y[50000:60000]), (X[60000:], y[60000:])
 
